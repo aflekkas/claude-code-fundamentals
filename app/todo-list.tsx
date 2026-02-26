@@ -4,26 +4,19 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import confetti from "canvas-confetti";
 import { supabase } from "../lib/supabase";
+import { Card, CardHeader, CardTitle, CardAction, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 
 interface Todo {
   id: string;
   text: string;
   completed: boolean;
-}
-
-const DESCRIPTIONS_KEY = "todo-descriptions";
-
-function loadDescriptions(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem(DESCRIPTIONS_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveDescriptions(descriptions: Record<string, string>) {
-  localStorage.setItem(DESCRIPTIONS_KEY, JSON.stringify(descriptions));
+  description: string;
 }
 
 export default function TodoList() {
@@ -33,17 +26,22 @@ export default function TodoList() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [descriptions, setDescriptions] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setDescriptions(loadDescriptions());
-  }, []);
+  const activeTodos = todos.filter((t) => !t.completed);
+  const completedTodos = todos.filter((t) => t.completed);
+  const totalCount = todos.length;
+  const completedCount = completedTodos.length;
 
-  function updateDescription(id: string, desc: string) {
-    const updated = { ...descriptions, [id]: desc };
-    setDescriptions(updated);
-    saveDescriptions(updated);
+  async function updateDescription(id: string, desc: string) {
+    setTodos(todos.map((t) => (t.id === id ? { ...t, description: desc } : t)));
+    const { error } = await supabase
+      .from("todos")
+      .update({ description: desc })
+      .eq("id", id);
+    if (error) {
+      console.error("[updateDescription] Error:", error.message, error);
+    }
   }
 
   useEffect(() => {
@@ -61,7 +59,7 @@ export default function TodoList() {
       console.log("[init] Fetching todos from Supabase...");
       const { data, error } = await supabase
         .from("todos")
-        .select("id, text, completed")
+        .select("id, text, completed, description")
         .order("created_at", { ascending: true });
 
       if (error) {
@@ -88,7 +86,7 @@ export default function TodoList() {
     const { data, error } = await supabase
       .from("todos")
       .insert({ text, completed: false, user_id: userId })
-      .select("id, text, completed")
+      .select("id, text, completed, description")
       .single();
 
     if (error) {
@@ -141,9 +139,6 @@ export default function TodoList() {
     }
     console.log("[deleteTodo] Deleted successfully");
     setTodos(todos.filter((t) => t.id !== id));
-    const { [id]: _, ...rest } = descriptions;
-    setDescriptions(rest);
-    saveDescriptions(rest);
     if (expandedId === id) setExpandedId(null);
   }
 
@@ -160,155 +155,203 @@ export default function TodoList() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen px-4 font-[family-name:var(--font-geist-sans)]">
-        <p className="text-sm text-gray-500">Loading...</p>
+      <div className="flex items-center justify-center min-h-screen px-4 font-[family-name:var(--font-geist-sans)] bg-gradient-to-br from-slate-50 to-blue-50/50">
+        <div className="flex items-center gap-3">
+          <div className="h-4 w-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading your tasks...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4 font-[family-name:var(--font-geist-sans)]">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">To-Do List</h1>
-          <button
-            onClick={signOut}
-            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            Sign out
-          </button>
-        </div>
+    <div className="flex items-start sm:items-center justify-center min-h-screen px-4 py-6 sm:py-0 font-[family-name:var(--font-geist-sans)] bg-gradient-to-br from-slate-50 to-blue-50/50">
+      <Card className="w-full max-w-md rounded-2xl shadow-xl shadow-gray-200/50">
+        {/* Header */}
+        <CardHeader className="border-b border-gray-100">
+          <CardTitle className="text-xl tracking-tight">To-Do List</CardTitle>
+          <CardAction>
+            <Button variant="outline" size="sm" onClick={signOut}>
+              Sign out
+            </Button>
+          </CardAction>
+        </CardHeader>
 
-        <form onSubmit={addTodo} className="flex gap-2 mb-4">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Add a new task..."
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
-          >
-            Add
-          </button>
-        </form>
+        <CardContent className="space-y-5">
+          {/* Progress indicator */}
+          {totalCount > 0 && (
+            <div>
+              <div className="flex justify-between text-xs text-muted-foreground mb-2">
+                <span>{completedCount} of {totalCount} tasks completed</span>
+                <span>{Math.round((completedCount / totalCount) * 100)}%</span>
+              </div>
+              <Progress
+                value={totalCount > 0 ? (completedCount / totalCount) * 100 : 0}
+                className="h-1.5"
+              />
+            </div>
+          )}
 
-        {todos.length === 0 ? (
-          <p className="text-center text-gray-400 py-8 text-sm">
-            No todos yet. Add one above!
-          </p>
-        ) : (
-          <>
-            {todos.filter((t) => !t.completed).length > 0 && (
-              <ul className="space-y-2">
-                {todos.filter((t) => !t.completed).map((todo) => (
-                  <li
-                    key={todo.id}
-                    className="group rounded-lg border border-gray-200 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={todo.completed}
-                        onChange={() => toggleTodo(todo.id)}
-                        className="h-4 w-4 rounded border-gray-300 accent-blue-600"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setExpandedId(expandedId === todo.id ? null : todo.id)}
-                        className="flex-1 text-left text-sm text-gray-800 hover:text-blue-600 transition-colors"
+          {/* Add task form */}
+          <form onSubmit={addTodo} className="flex gap-2">
+            <Input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Add a new task..."
+              className="flex-1 rounded-xl"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              className="rounded-xl shrink-0"
+              aria-label="Add task"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+            </Button>
+          </form>
+
+          {/* Empty state */}
+          {todos.length === 0 ? (
+            <div className="text-center py-12">
+              <svg className="w-16 h-16 mx-auto mb-4 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={0.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25zM6.75 12h.008v.008H6.75V12zm0 3h.008v.008H6.75V15zm0 3h.008v.008H6.75V18z" />
+              </svg>
+              <p className="text-muted-foreground text-sm font-medium">No tasks yet</p>
+              <p className="text-gray-300 text-xs mt-1">Add your first task above to get started</p>
+            </div>
+          ) : (
+            <>
+              {/* Active todos */}
+              {activeTodos.length > 0 && (
+                <ul className="space-y-0.5">
+                  {activeTodos.map((todo) => (
+                    <li key={todo.id}>
+                      <Collapsible
+                        open={expandedId === todo.id}
+                        onOpenChange={(open) => setExpandedId(open ? todo.id : null)}
                       >
-                        {todo.text}
-                      </button>
-                      <button
-                        onClick={() => deleteTodo(todo.id)}
-                        className="text-gray-400 hover:text-red-500 text-sm transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                    {expandedId === todo.id && (
-                      <div className="mt-2 ml-7">
-                        <textarea
-                          value={descriptions[todo.id] || ""}
-                          onChange={(e) => updateDescription(todo.id, e.target.value)}
-                          placeholder="Add a description..."
-                          rows={2}
-                          className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                        />
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {todos.filter((t) => t.completed).length > 0 && (
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowCompleted(!showCompleted)}
-                  className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                >
-                  <svg
-                    className={`h-3 w-3 transition-transform ${showCompleted ? "rotate-90" : ""}`}
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M6.293 4.293a1 1 0 011.414 0L14 10.586l-6.293 6.293a1 1 0 01-1.414-1.414L11.172 10.5 6.293 5.707a1 1 0 010-1.414z" />
-                  </svg>
-                  {todos.filter((t) => t.completed).length} completed
-                </button>
-
-                {showCompleted && (
-                  <ul className="mt-2 space-y-2">
-                    {todos.filter((t) => t.completed).map((todo) => (
-                      <li
-                        key={todo.id}
-                        className="group rounded-lg border border-gray-200 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={todo.completed}
-                            onChange={() => toggleTodo(todo.id)}
-                            className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                        <div className="group flex items-center gap-3 rounded-xl hover:bg-gray-50/80 px-3 py-2.5 transition-colors">
+                          <Checkbox
+                            checked={false}
+                            onCheckedChange={() => toggleTodo(todo.id)}
+                            className="rounded-full"
+                            aria-label={`Complete "${todo.text}"`}
                           />
-                          <button
-                            type="button"
-                            onClick={() => setExpandedId(expandedId === todo.id ? null : todo.id)}
-                            className="flex-1 text-left text-sm line-through text-gray-400 hover:text-gray-500 transition-colors"
-                          >
-                            {todo.text}
-                          </button>
-                          <button
+                          <CollapsibleTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex-1 text-left text-sm text-gray-700 hover:text-gray-900 transition-colors"
+                            >
+                              {todo.text}
+                            </button>
+                          </CollapsibleTrigger>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
                             onClick={() => deleteTodo(todo.id)}
-                            className="text-gray-400 hover:text-red-500 text-sm transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            className="text-gray-300 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-50"
+                            aria-label={`Delete "${todo.text}"`}
                           >
-                            Delete
-                          </button>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                          </Button>
                         </div>
-                        {expandedId === todo.id && (
-                          <div className="mt-2 ml-7">
-                            <textarea
-                              value={descriptions[todo.id] || ""}
+                        <CollapsibleContent>
+                          <div className="ml-[30px] px-3 pb-2">
+                            <Textarea
+                              value={todo.description || ""}
                               onChange={(e) => updateDescription(todo.id, e.target.value)}
                               placeholder="Add a description..."
                               rows={2}
-                              className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm text-gray-600 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                              className="min-h-0 resize-none bg-gray-50 border-gray-100"
                             />
                           </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Completed section */}
+              {completedTodos.length > 0 && (
+                <Collapsible open={showCompleted} onOpenChange={setShowCompleted}>
+                  <div className={activeTodos.length > 0 ? "pt-3 border-t border-gray-100" : ""}>
+                    <CollapsibleTrigger asChild>
+                      <button className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors px-3 py-1">
+                        <svg
+                          className={`h-3 w-3 transition-transform duration-200 ${showCompleted ? "rotate-90" : ""}`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M6.293 4.293a1 1 0 011.414 0L14 10.586l-6.293 6.293a1 1 0 01-1.414-1.414L11.172 10.5 6.293 5.707a1 1 0 010-1.414z" />
+                        </svg>
+                        {completedTodos.length} completed
+                      </button>
+                    </CollapsibleTrigger>
+
+                    <CollapsibleContent>
+                      <ul className="mt-1 space-y-0.5">
+                        {completedTodos.map((todo) => (
+                          <li key={todo.id}>
+                            <Collapsible
+                              open={expandedId === todo.id}
+                              onOpenChange={(open) => setExpandedId(open ? todo.id : null)}
+                            >
+                              <div className="group flex items-center gap-3 rounded-xl px-3 py-2.5 opacity-50 hover:opacity-70 transition-opacity">
+                                <Checkbox
+                                  checked={true}
+                                  onCheckedChange={() => toggleTodo(todo.id)}
+                                  className="rounded-full"
+                                  aria-label={`Uncomplete "${todo.text}"`}
+                                />
+                                <CollapsibleTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="flex-1 text-left text-sm line-through text-gray-400 hover:text-gray-500 transition-colors"
+                                  >
+                                    {todo.text}
+                                  </button>
+                                </CollapsibleTrigger>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  onClick={() => deleteTodo(todo.id)}
+                                  className="text-gray-300 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-red-50"
+                                  aria-label={`Delete "${todo.text}"`}
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                  </svg>
+                                </Button>
+                              </div>
+                              <CollapsibleContent>
+                                <div className="ml-[30px] px-3 pb-2">
+                                  <Textarea
+                                    value={todo.description || ""}
+                                    onChange={(e) => updateDescription(todo.id, e.target.value)}
+                                    placeholder="Add a description..."
+                                    rows={2}
+                                    className="min-h-0 resize-none bg-gray-50 border-gray-100"
+                                  />
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          </li>
+                        ))}
+                      </ul>
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

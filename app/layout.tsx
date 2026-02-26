@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Claude Code Fundamentals",
-  description: "A Next.js application",
+  title: "TaskFlow - Manage Your Tasks Effortlessly",
+  description:
+    "A simple, beautiful to-do app that helps you stay organized. Track progress, celebrate wins, and keep everything in sync.",
 };
 
 export default function RootLayout({
